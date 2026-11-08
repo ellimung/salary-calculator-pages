@@ -2,6 +2,27 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createLocalApi} from '../public/local-api.js';
 import {emptyData} from '../public/model.js';
+test('내 정보 변경: 이름·아이디·비밀번호 변경, 복구키 재발급과 기록 보존',async()=>{
+ const accounts=new Map();let queue=Promise.resolve();const store={get:async id=>structuredClone(accounts.get(id)),put:async a=>accounts.set(a.username,structuredClone(a)),rename:async(old,a)=>{accounts.set(a.username,structuredClone(a));accounts.delete(old);}};
+ const options={store,lock:task=>{const run=queue.then(task);queue=run.catch(()=>{});return run;}},api=createLocalApi(options),oldSession=createLocalApi(options),other=createLocalApi(options);
+ const initial=await api('/api/auth/register','POST',{username:'First_teacher',name:'이름',password:'first-password'});
+ const data={...emptyData(),adjustments:{'2026-11':{allowance:1000,deduction:100}}};await api('/api/workspace','PUT',{data,revision:0});
+ await assert.rejects(api('/api/auth/profile','POST',{name:'새 이름',username:'first_teacher',currentPassword:'wrong'}),{status:401});
+ const named=await api('/api/auth/profile','POST',{name:'새 이름',username:'first_teacher',currentPassword:'first-password'});assert.equal(named.user.name,'새 이름');assert.equal(named.recoveryKey,undefined);
+ await oldSession('/api/auth/login','POST',{username:' FIRST_TEACHER ',password:'first-password'});
+ await other('/api/auth/register','POST',{username:'taken_teacher',name:'다른 계정',password:'other-password'});
+ await assert.rejects(api('/api/auth/profile','POST',{name:'충돌',username:'taken_teacher',currentPassword:'first-password'}),{status:409});assert.equal((await api('/api/auth/session')).user.username,'first_teacher');
+ const renamed=await api('/api/auth/profile','POST',{name:'새 이름',username:'new_teacher',currentPassword:'first-password'});assert.equal(renamed.user.username,'new_teacher');assert.ok(renamed.recoveryKey);assert.notEqual(renamed.recoveryKey,initial.recoveryKey);assert.equal(accounts.has('first_teacher'),false);
+ assert.equal((await api('/api/workspace')).data.adjustments['2026-11'].allowance,1000);assert.equal((await api('/api/workspace')).revision,1);await assert.rejects(oldSession('/api/workspace'),{status:401});
+ const login=createLocalApi(options);await assert.rejects(login('/api/auth/login','POST',{username:'first_teacher',password:'first-password'}),e=>e.status===401&&e.message.includes('등록되지 않은 아이디'));
+ await login('/api/auth/login','POST',{username:'new_teacher',password:'first-password'});
+ await assert.rejects(api('/api/auth/change-password','POST',{currentPassword:'wrong',password:'changed-password'}),{status:401});
+ await assert.rejects(api('/api/auth/change-password','POST',{currentPassword:'first-password',password:'short'}));
+ const changed=await api('/api/auth/change-password','POST',{currentPassword:'first-password',password:'changed-password'});assert.ok(changed.recoveryKey);await assert.rejects(login('/api/workspace'),{status:401});
+ const fresh=createLocalApi(options);await assert.rejects(fresh('/api/auth/login','POST',{username:'new_teacher',password:'first-password'}),{status:401});await fresh('/api/auth/login','POST',{username:'new_teacher',password:'changed-password'});assert.equal((await fresh('/api/workspace')).data.adjustments['2026-11'].deduction,100);
+ await assert.rejects(fresh('/api/auth/recover','POST',{username:'new_teacher',recoveryKey:renamed.recoveryKey,password:'recovered-password'}),{status:401});
+ await fresh('/api/auth/recover','POST',{username:'new_teacher',recoveryKey:changed.recoveryKey,password:'recovered-password'});assert.equal((await fresh('/api/workspace')).revision,1);
+});
 test('기기 저장: 암호화·계정 격리·복구키 교체·백업 복원·충돌·기존 세션 폐기',async()=>{
  const accounts=new Map();let queue=Promise.resolve();
  const store={get:async id=>structuredClone(accounts.get(id)),put:async a=>accounts.set(a.username,structuredClone(a))};
