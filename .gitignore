@@ -1,0 +1,7 @@
+pages-dist/
+test-results/
+node_modules/
+.env*
+data/
+*.sqlite*
+*.log

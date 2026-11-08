@@ -1,0 +1,44 @@
+name: GitHub Pages (device storage)
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['public/**', 'build-pages.mjs', 'holiday-service.mjs', '.github/workflows/pages.yml']
+  schedule:
+    - cron: '17 20 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+jobs:
+  pages:
+    if: vars.ENABLE_PAGES == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test test/*.test.mjs
+      - uses: actions/cache@v4
+        with:
+          path: test-results/holiday-build-cache
+          key: holiday-cache-${{ github.run_id }}
+          restore-keys: holiday-cache-
+      - run: node build-pages.mjs --update-holidays
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages-dist
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
