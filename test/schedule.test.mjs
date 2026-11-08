@@ -2,6 +2,14 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyData,validateData,validateSchedule,scheduledOn,plannedPlaces,monthForecastPay} from '../public/model.js';
 const place={id:'school',name:'학교',location:'교실',rate:18000,start:'09:00',end:'17:00',break:60};
+test('월 1회 반복: 같은 날짜, 없는 날짜 건너뛰기, 기간·윤년·공휴일·백업 유지',()=>{
+ const p={...place,schedule:validateSchedule({type:'monthly',day:31,startDate:'2026-01-15',endDate:'2026-12-30'})};
+ assert.equal(scheduledOn(p,'2026-01-31'),true);assert.equal(scheduledOn(p,'2026-03-31'),true);assert.equal(scheduledOn(p,'2026-02-28'),false);assert.equal(scheduledOn(p,'2026-04-30'),false);assert.equal(scheduledOn(p,'2026-12-31'),false);
+ const leap={...p,schedule:{type:'monthly',day:29,startDate:'2027-01-01',endDate:''}};assert.equal(scheduledOn(leap,'2028-02-29'),true);assert.equal(scheduledOn(leap,'2027-02-28'),false);
+ const holiday={...place,skipHolidays:true,schedule:{type:'monthly',day:5,startDate:'2026-01-01',endDate:''}};assert.equal(scheduledOn(holiday,'2026-05-05'),false);assert.equal(scheduledOn({...holiday,skipHolidays:false},'2026-05-05'),true);assert.equal(scheduledOn({...holiday,skipHolidays:false,extraDaysOff:['2026-05-05']},'2026-05-05'),false);
+ const d=validateData({...emptyData(),places:[p]});assert.deepEqual(d.places[0].schedule,p.schedule);assert.equal(monthForecastPay(d,'2026-03'),126000);assert.equal(monthForecastPay(d,'2026-04'),0);
+ for(const schedule of [{...p.schedule,day:0},{...p.schedule,day:32},{...p.schedule,day:1.5},{...p.schedule,endDate:'2025-12-31'}])assert.throws(()=>validateSchedule(schedule));
+});
 test('반복 일정의 요일, 기간, 월 경계 및 하루 근무',()=>{
  const p={...place,schedule:validateSchedule({type:'weekly',days:[3,1],startDate:'2026-11-02',endDate:'2026-12-02'})};
  assert.deepEqual(p.schedule.days,[1,3]);

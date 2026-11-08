@@ -12,12 +12,13 @@ const validDate = v => typeof v==='string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && v
 export function validateSchedule(s){
   if(s===undefined||s===null)return null;
   if(s.type==='once'&&validDate(s.date))return {type:'once',date:s.date};
+  if(s.type==='monthly'&&validDate(s.startDate)&&(s.endDate===''||validDate(s.endDate)&&s.endDate>=s.startDate)&&Number.isInteger(s.day)&&s.day>=1&&s.day<=31)return {type:'monthly',day:s.day,startDate:s.startDate,endDate:s.endDate};
   if(s.type==='weekly'&&validDate(s.startDate)&&(s.endDate===''||validDate(s.endDate)&&s.endDate>=s.startDate)&&Array.isArray(s.days)&&s.days.length>0&&s.days.length<=7&&s.days.every(d=>Number.isInteger(d)&&d>=0&&d<=6)&&new Set(s.days).size===s.days.length)return {type:'weekly',startDate:s.startDate,endDate:s.endDate,days:[...s.days].sort()};
   throw new Error('근무 일정의 날짜와 반복 요일을 확인해 주세요.');
 }
 export function scheduledOn(p,date){
   const s=p.schedule;if(!s||!validDate(date)||p.extraDaysOff?.includes(date)||(p.skipHolidays&&holidayName(date)))return false;
-  return s.type==='once'?s.date===date:date>=s.startDate&&(!s.endDate||date<=s.endDate)&&s.days.includes(new Date(date+'T00:00:00Z').getUTCDay());
+  return s.type==='once'?s.date===date:date>=s.startDate&&(!s.endDate||date<=s.endDate)&&(s.type==='monthly'?Number(date.slice(8))===s.day:s.days.includes(new Date(date+'T00:00:00Z').getUTCDay()));
 }
 export function plannedPlaces(data,date){return data.places.filter(p=>scheduledOn(p,date)&&!data.records.some(r=>r.date===date&&r.place===p.id));}
 export function monthForecastPay(data,month){
@@ -47,6 +48,12 @@ export function annualIncome(data,year){
   const records=data.records.filter(r=>r.date.startsWith(`${year}-`)),groups=new Map(),names=new Map(data.places.map(p=>[p.id,p.name]));
   for(const r of records){const name=names.get(r.place)||'삭제된 근무지';if(!groups.has(name))groups.set(name,{name,base:0,hours:0,dates:new Set()});const g=groups.get(name);g.base+=paidHours(r)*r.rate;g.hours+=paidHours(r);g.dates.add(r.date);}
   return {year,months,base:months.reduce((s,m)=>s+m.base,0),allowance:months.reduce((s,m)=>s+m.allowance,0),deduction:months.reduce((s,m)=>s+m.deduction,0),net:months.reduce((s,m)=>s+m.net,0),days:new Set(records.map(r=>r.date)).size,hours:months.reduce((s,m)=>s+m.hours,0),places:[...groups.values()].filter(g=>Math.round(g.base)>0).map(g=>({name:g.name,base:Math.round(g.base),hours:g.hours,days:g.dates.size})).sort((a,b)=>b.base-a.base)};
+}
+export function selectedAnnualIncome(data,year,excluded=new Set()){
+  const all=annualIncome(data,year),partial=all.places.some(p=>excluded.has(p.name));
+  const excludedIds=new Set(data.places.filter(p=>excluded.has(p.name)).map(p=>p.id));
+  const selected=partial?annualIncome({...data,places:data.places.filter(p=>!excludedIds.has(p.id)),records:data.records.filter(r=>!excludedIds.has(r.place)),adjustments:{}},year):all;
+  return {...selected,allPlaces:all.places,partial};
 }
 export function excludeWorkDate(p,date){
   if(!validDate(date))throw Error('근무 날짜를 확인해 주세요.');
