@@ -55,6 +55,10 @@ export function selectedAnnualIncome(data,year,excluded=new Set()){
   const selected=partial?annualIncome({...data,places:data.places.filter(p=>!excludedIds.has(p.id)),records:data.records.filter(r=>!excludedIds.has(r.place)),adjustments:{}},year):all;
   return {...selected,allPlaces:all.places,partial};
 }
+export function cancelAttendance(data,recordId){
+  if(!data.records.some(r=>r.id===recordId))throw Error('취소할 출근 기록을 찾지 못했습니다.');
+  return {...data,records:data.records.filter(r=>r.id!==recordId)};
+}
 export function excludeWorkDate(p,date){
   if(!validDate(date))throw Error('근무 날짜를 확인해 주세요.');
   const dates=[...new Set([...(p.extraDaysOff||[]),date])];

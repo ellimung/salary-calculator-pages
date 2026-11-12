@@ -1,7 +1,31 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createLocalApi} from '../public/local-api.js';
+import {createLocalApi,tabSessionKey} from '../public/local-api.js';
 import {emptyData} from '../public/model.js';
+function tabStorage(){const values=new Map();return {getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key),clear:()=>values.clear()};}
+test('탭 로그인: 새로고침 복원, 일반 새 탭·탭 종료·로그아웃 잠금, 기록 유지',async()=>{
+ const accounts=new Map(),store={get:async key=>structuredClone(accounts.get(key)),put:async value=>accounts.set(value.username,structuredClone(value))},sessionStore=tabStorage();
+ const options={store,sessionStore,lock:task=>task()},api=createLocalApi(options);
+ const registered=await api('/api/auth/register','POST',{username:'refresh_teacher',name:'새로고침',password:'reload-password'});
+ const data={...emptyData(),adjustments:{'2026-11':{allowance:1500,deduction:0}}};await api('/api/workspace','PUT',{data,revision:0});
+ const saved=sessionStore.getItem(tabSessionKey);assert.ok(saved);assert.ok(!saved.includes('reload-password'));assert.ok(!saved.includes(registered.recoveryKey));
+ const reloaded=createLocalApi(options);assert.equal((await reloaded('/api/auth/session')).user.username,'refresh_teacher');assert.equal((await reloaded('/api/workspace')).data.adjustments['2026-11'].allowance,1500);
+ await assert.rejects(createLocalApi({...options,sessionStore:tabStorage()})('/api/auth/session'),{status:401});
+ await reloaded('/api/auth/logout','POST');assert.equal(sessionStore.getItem(tabSessionKey),null);await assert.rejects(createLocalApi(options)('/api/auth/session'),{status:401});
+ await api('/api/auth/login','POST',{username:'refresh_teacher',password:'reload-password'});sessionStore.clear();await assert.rejects(createLocalApi(options)('/api/auth/session'),{status:401});
+ await api('/api/auth/login','POST',{username:'refresh_teacher',password:'reload-password'});assert.equal((await api('/api/workspace')).revision,1);
+});
+test('저장된 탭 로그인도 비밀번호 변경·복구 후 무효화되며 변조된 해제 키는 거부',async()=>{
+ const accounts=new Map(),store={get:async key=>structuredClone(accounts.get(key)),put:async value=>accounts.set(value.username,structuredClone(value))},sessionStore=tabStorage(),options={store,sessionStore,lock:task=>task()},api=createLocalApi(options);
+ await api('/api/auth/register','POST',{username:'session_teacher',name:'탭 로그인',password:'first-password'});
+ const otherTab=tabStorage();otherTab.setItem(tabSessionKey,sessionStore.getItem(tabSessionKey));
+ const changed=await api('/api/auth/change-password','POST',{currentPassword:'first-password',password:'second-password'});
+ await assert.rejects(createLocalApi({...options,sessionStore:otherTab})('/api/auth/session'),{status:401});assert.equal(otherTab.getItem(tabSessionKey),null);
+ assert.equal((await createLocalApi(options)('/api/auth/session')).user.username,'session_teacher');
+ const recoveryTab=tabStorage();await createLocalApi({...options,sessionStore:recoveryTab})('/api/auth/recover','POST',{username:'session_teacher',recoveryKey:changed.recoveryKey,password:'third-password'});
+ await assert.rejects(createLocalApi(options)('/api/auth/session'),{status:401});assert.equal(sessionStore.getItem(tabSessionKey),null);
+ const corrupted=JSON.parse(recoveryTab.getItem(tabSessionKey));corrupted.rawKey='A'.repeat(43);recoveryTab.setItem(tabSessionKey,JSON.stringify(corrupted));await assert.rejects(createLocalApi({...options,sessionStore:recoveryTab})('/api/auth/session'),{status:401});assert.equal(recoveryTab.getItem(tabSessionKey),null);
+});
 test('내 정보 변경: 이름·아이디·비밀번호 변경, 복구키 재발급과 기록 보존',async()=>{
  const accounts=new Map();let queue=Promise.resolve();const store={get:async id=>structuredClone(accounts.get(id)),put:async a=>accounts.set(a.username,structuredClone(a)),rename:async(old,a)=>{accounts.set(a.username,structuredClone(a));accounts.delete(old);}};
  const options={store,lock:task=>{const run=queue.then(task);queue=run.catch(()=>{});return run;}},api=createLocalApi(options),oldSession=createLocalApi(options),other=createLocalApi(options);
