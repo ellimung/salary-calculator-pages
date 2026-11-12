@@ -39,3 +39,4 @@ h1{font-family:"Malgun Gothic","Apple SD Gothic Neo",sans-serif;font-weight:600;
 @media(max-width:1100px){.annual-columns{grid-template-columns:1fr}.annual-totals article{padding:16px}.annual-totals strong{font-size:23px}}@media(max-width:720px){.annual-totals{grid-template-columns:1fr}.annual-totals strong{margin:6px 0}.annual-columns th,.annual-columns td{padding:10px;font-size:11px}}
 .annual-place>input[type=checkbox]{width:17px;height:17px;accent-color:#224f43;flex-shrink:0;cursor:pointer}.annual-place>div{flex:1}.annual-unselected>div,.annual-unselected>strong{opacity:.4}.weekday-options{flex-wrap:wrap}
 .schedule-monthly[hidden]{display:none}
+.record-status{display:block;font-size:10px;color:#7c8b71;margin-top:4px}
